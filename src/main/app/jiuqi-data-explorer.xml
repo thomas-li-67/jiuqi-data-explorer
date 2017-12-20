@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans"  
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+    <db:oracle-config name="jiuqi_oracle" host="10.16.4.34" port="1521" instance="bluestar" user="lx" password="lx" doc:name="Oracle Configuration"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8082" doc:name="HTTP Listener Configuration"/>
+    <flow name="jiuqi-data-explorerFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/dict" doc:name="HTTP"/>
+        <set-variable variableName="tablename" value="#[message.inboundProperties.'http.query.params'.name]" doc:name="Variable"/>
+        <db:select config-ref="jiuqi_oracle" doc:name="Database">
+            <db:dynamic-query><![CDATA[select * from #[flowVars.tablename]]]></db:dynamic-query>
+        </db:select>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv header = false, quote="\t", escape="\t\t",separator="\t!!!@@@###\t",quoteValues=false
+%function excape(s)
+   ((s replace /\"/ with ("\\" ++ "\"")) replace /'/ with "\\u0027") 
+%function eventToArray( ev ) 
+ ev pluck ("\"" ++ $$ ++ "\": \"" ++ (excape($) when $ != null otherwise "null") ++ "\"")
+%var eventToJSON = (event) -> ("{" ++ (eventToArray(event) joinBy ",") ++ "}")
+%var genEvent = (event) -> ("{\"sourcetype\": \"_json\", \"source\": \"" ++ flowVars.tablename ++ "\", \"event\": " ++ eventToJSON(event) ++ "}")
+---
+   
+	payload map {
+		"commandline": "curl -k https://10.8.14.26:8088/services/collector -H \"Authorization: Splunk 7338CA9B-89E0-43FB-8E29-5F6B5DC6AF48\" -d '" ++ genEvent($) ++ "'"
+	}]]></dw:set-payload>
+        </dw:transform-message>
+    </flow>
+</mule>

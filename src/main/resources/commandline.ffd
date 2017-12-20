@@ -1,0 +1,4 @@
+form: FIXEDWIDTH
+name: CommandLine
+values:
+- { name: 'commandline', type: String, length: 8192 }
